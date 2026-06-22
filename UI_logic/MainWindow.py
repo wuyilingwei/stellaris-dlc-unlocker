@@ -2,6 +2,7 @@ import os
 from shutil import rmtree, copytree
 from sys import argv
 from zipfile import ZipFile, BadZipFile
+from concurrent.futures import ThreadPoolExecutor
 
 import requests
 import winreg
@@ -42,18 +43,42 @@ class SetupWorker(QObject):
 
     def run(self):
         try:
-            dlc_data = get_dlc_data()
-            try:
-                user_logon_name = get_user_logon_name()
-            except:
-                user_logon_name = os.getlogin()
+            def fetch_logon_name():
+                try:
+                    return get_user_logon_name()
+                except Exception:
+                    return os.getlogin()
 
-            server_data = get_server_data()
-            self.server_url = server_data.get('url')
-            self.server_alturl = server_data.get('alturl')
+            def check_github_update():
+                try:
+                    releases_url = f"{self.GITHUB_API_URL}/releases/latest"
+                    response = requests.get(releases_url, timeout=5)
+                    if response.status_code == 200:
+                        info = response.json()
+                        info['source'] = 'github'
+                        return info
+                except Exception as e:
+                    print(f"GitHub update check failed: {e}")
+                return None
+
+            # Fire all independent init tasks concurrently
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                f_dlc    = executor.submit(get_dlc_data)
+                f_server = executor.submit(get_server_data)
+                f_logon  = executor.submit(fetch_logon_name)
+                f_path   = executor.submit(stellaris_path)
+                f_update = executor.submit(check_github_update)
+
+                dlc_data       = f_dlc.result()
+                server_data    = f_server.result()
+                user_logon_name = f_logon.result()
+                path           = f_path.result()
+                github_update  = f_update.result()
+
+            self.server_url      = server_data.get('url')
+            self.server_alturl   = server_data.get('alturl')
             self.alt_launcher_name = server_data.get('altlauncher')
-            self.latest_version = server_data.get('version')
-            path = stellaris_path()
+            self.latest_version  = server_data.get('version')
 
             initial_data = {
                 'dlc_data': dlc_data,
@@ -80,24 +105,14 @@ class SetupWorker(QObject):
             else:
                 self.dlc_check_complete.emit([])
 
-            try:
-                print(f"Checking updates via GitHub: {self.GITHUB_API_URL}")
-                releases_url = f"{self.GITHUB_API_URL}/releases/latest"
-                response = requests.get(releases_url, timeout=5)
-
-                if response.status_code == 200:
-                    update_info = response.json()
-                    update_info['source'] = 'github'
-                else:
-                    raise Exception(f"GitHub returned {response.status_code}")
-
-            except Exception as e:
-                print(f"Update check failed/skipped ({e}). Using server fallback.")
+            if github_update:
+                update_info = github_update
+            else:
+                print("GitHub update check failed. Using server fallback.")
                 update_info = {
                     'tag_name': self.latest_version,
                     'source': 'server'
                 }
-
             self.update_info.emit(update_info)
 
         except Exception as e:
