@@ -963,33 +963,48 @@ function Update-UI {
     }
 }
 
-$window.Add_Loaded({
-    Write-Log "=== Stellaris DLC Unlocker started ==="
-    Set-LangBuiltin (Get-SystemLang); Set-LangActive $script:curLang; Apply-UIText
-    $steam = Find-SteamPath
-    $sp    = if ($steam) { Find-StellarisPath $steam } else { $null }
-    if (-not [string]::IsNullOrWhiteSpace($sp)) { $pathBox.Text = $sp }
-    $detectedLauncher = try {
-        $reg = (Get-ItemProperty 'HKCU:\Software\Paradox Interactive\Paradox Launcher v2' -ErrorAction Stop).LauncherInstallation
-        if ($reg -and (Test-Path $reg)) { $reg }
-        else { "$env:LOCALAPPDATA\Programs\Paradox Interactive\launcher" }
-    } catch { "$env:LOCALAPPDATA\Programs\Paradox Interactive\launcher" }
-    if (Test-Path $detectedLauncher) { $launcherPathBox.Text = $detectedLauncher }
-    $launcherBrowseBtn.Add_Click({
-        $path = [Picker.FolderDialog]::Pick('Select Paradox Launcher folder', $launcherPathBox.Text)
-        if ($path) { $launcherPathBox.Text = $path }
-    })
-    $statusLbl.Text=T 'status_loading'; $installBtn.IsEnabled=$false
+$window.Dispatcher.add_UnhandledException({
+    param($s, $e)
+    $ex = $e.Exception
+    Write-Log ("UNHANDLED: " + $ex.GetType().FullName + ": " + $ex.Message) 'ERROR'
+    Write-Log ("STACK: " + $ex.StackTrace) 'ERROR'
+    [System.Windows.MessageBox]::Show(($ex.GetType().Name + ": " + $ex.Message + "`n`n" + $ex.StackTrace), 'Unhandled error', [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error) | Out-Null
+    $e.Handled = $true
+})
 
-    Start-PSRunspace $INIT_SCRIPT @{
-        _Q           = $script:Q
-        _GDLC        = $GITHUB_DLC_URL;      _GDLC_FALL   = $JSDELIVR_DLC_URL;
-        _GHASH       = $GITHUB_HASHES_URL;   _GHASH_FALL = $JSDELIVR_HASHES_URL
-        _STEAMCMD_API= $STEAMCMD_API;        _APPID      = $STELLARIS_APP_ID
-        _ORIGIN_API  = $ORIGIN_API;          _CACHE_DIR  = $CACHE_DIR
-        _SERVERURL = $SERVER_URL
-        _ALTLAUNCHERS= $ALT_LAUNCHERS
-        _GAMEPATH    = if (-not [string]::IsNullOrWhiteSpace($sp)) { $sp } else { '' }
+$window.Add_Loaded({
+    try {
+        Write-Log "=== Stellaris DLC Unlocker started ==="
+        Set-LangBuiltin (Get-SystemLang); Set-LangActive $script:curLang; Apply-UIText
+        $steam = Find-SteamPath
+        $sp    = if ($steam) { Find-StellarisPath $steam } else { $null }
+        if (-not [string]::IsNullOrWhiteSpace($sp)) { $pathBox.Text = $sp }
+        $detectedLauncher = try {
+            $reg = (Get-ItemProperty 'HKCU:\Software\Paradox Interactive\Paradox Launcher v2' -ErrorAction Stop).LauncherInstallation
+            if ($reg -and (Test-Path $reg)) { $reg }
+            else { "$env:LOCALAPPDATA\Programs\Paradox Interactive\launcher" }
+        } catch { "$env:LOCALAPPDATA\Programs\Paradox Interactive\launcher" }
+        if (Test-Path $detectedLauncher) { $launcherPathBox.Text = $detectedLauncher }
+        $launcherBrowseBtn.Add_Click({
+            $path = [Picker.FolderDialog]::Pick('Select Paradox Launcher folder', $launcherPathBox.Text)
+            if ($path) { $launcherPathBox.Text = $path }
+        })
+        $statusLbl.Text=T 'status_loading'; $installBtn.IsEnabled=$false
+
+        Start-PSRunspace $INIT_SCRIPT @{
+            _Q           = $script:Q
+            _GDLC        = $GITHUB_DLC_URL;      _GDLC_FALL   = $JSDELIVR_DLC_URL;
+            _GHASH       = $GITHUB_HASHES_URL;   _GHASH_FALL = $JSDELIVR_HASHES_URL
+            _STEAMCMD_API= $STEAMCMD_API;        _APPID      = $STELLARIS_APP_ID
+            _ORIGIN_API  = $ORIGIN_API;          _CACHE_DIR  = $CACHE_DIR
+            _SERVERURL = $SERVER_URL
+            _ALTLAUNCHERS= $ALT_LAUNCHERS
+            _GAMEPATH    = if (-not [string]::IsNullOrWhiteSpace($sp)) { $sp } else { '' }
+        }
+    } catch {
+        Write-Log ("LOADED HANDLER FAILED: " + $_.Exception.GetType().FullName + ": " + $_.Exception.Message) 'ERROR'
+        Write-Log ("STACK: " + $_.ScriptStackTrace) 'ERROR'
+        [System.Windows.MessageBox]::Show(($_.Exception.GetType().Name + ": " + $_.Exception.Message + "`n`n" + $_.ScriptStackTrace), 'Load error', [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error) | Out-Null
     }
 })
 
